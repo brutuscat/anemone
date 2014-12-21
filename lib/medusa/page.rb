@@ -136,13 +136,12 @@ module Medusa
     # http://www.w3.org/TR/html4/struct/links.html#edef-BASE
     #
     def base
-      @base = if doc
+      @base ||= if doc
         href = doc.search('//head/base/@href')
         URI(href.to_s) unless href.nil? rescue nil
-      end unless @base
+      end
 
-      return nil if @base && @base.to_s().empty?
-      @base
+      @base && @base.to_s().empty? ? nil : @base
     end
 
 

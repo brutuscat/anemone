@@ -12,6 +12,7 @@ spec = Gem::Specification.new do |s|
   s.extra_rdoc_files = ["README.md"]
   s.add_dependency("nokogiri", ">= 1.3.0")
   s.add_dependency("robotex", ">= 1.0.0")
+  s.add_dependency("moneta", "~> 0.8.0")
 
   s.add_development_dependency "rake", ">=0.9.2"
   s.add_development_dependency "rdoc", ">=3.12"

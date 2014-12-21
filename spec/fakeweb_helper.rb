@@ -12,11 +12,11 @@ module Medusa
 
     def initialize(name = '', options = {})
       @name = name
-      @links = [options[:links]].flatten if options.has_key?(:links)
-      @hrefs = [options[:hrefs]].flatten if options.has_key?(:hrefs)
-      @redirect = options[:redirect] if options.has_key?(:redirect)
-      @auth = options[:auth] if options.has_key?(:auth)
-      @base = options[:base] if options.has_key?(:base)
+      @links = [options[:links]].flatten if options.key?(:links)
+      @hrefs = [options[:hrefs]].flatten if options.key?(:hrefs)
+      @redirect = options[:redirect] if options.key?(:redirect)
+      @auth = options[:auth] if options.key?(:auth)
+      @base = options[:base] if options.key?(:base)
       @content_type = options[:content_type] || "text/html"
       @body = options[:body]
 

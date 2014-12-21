@@ -1,6 +1,5 @@
 $:.unshift(File.dirname(__FILE__))
 require 'spec_helper'
-%w[pstore tokyo_cabinet sqlite3].each { |file| require "medusa/storage/#{file}.rb" }
 
 module Medusa
   describe Core do
@@ -17,7 +16,8 @@ module Medusa
         pages << FakePage.new('2')
         pages << FakePage.new('3')
 
-        Medusa.crawl(pages[0].url, @opts).should have(4).pages
+        crawled_pages = Medusa.crawl(pages[0].url, @opts).pages
+        (0..3).to_a.each { |i| crawled_pages.key?(SPEC_DOMAIN + i.to_s).should be_true }
       end
 
       it "should not follow links that leave the original domain" do
@@ -27,8 +27,8 @@ module Medusa
 
         core = Medusa.crawl(pages[0].url, @opts)
 
-        core.should have(2).pages
-        core.pages.keys.should_not include('http://www.other.com/')
+        (0..1).to_a.each { |i| core.pages.key?(SPEC_DOMAIN + i.to_s).should be_true }
+        core.pages.key?('http://www.other.com/').should be_false
       end
 
       it "should not follow redirects that leave the original domain" do
@@ -38,8 +38,8 @@ module Medusa
 
         core = Medusa.crawl(pages[0].url, @opts)
 
-        core.should have(2).pages
-        core.pages.keys.should_not include('http://www.other.com/')
+        (0..1).to_a.each { |i| core.pages.key?(SPEC_DOMAIN + i.to_s).should be_true }
+        core.pages.key?('http://www.other.com/').should be_false
       end
 
       it "should follow http redirects" do
@@ -48,7 +48,8 @@ module Medusa
         pages << FakePage.new('1', :redirect => '2')
         pages << FakePage.new('2')
 
-        Medusa.crawl(pages[0].url, @opts).should have(3).pages
+        crawled_pages = Medusa.crawl(pages[0].url, @opts).pages
+        (0..2).to_a.each { |i| crawled_pages.key?(SPEC_DOMAIN + i.to_s).should be_true }
       end
 
       it "should follow with HTTP basic authentication" do
@@ -59,7 +60,8 @@ module Medusa
         pages << FakePage.new('3', :auth => true)
 
         opts = @opts.merge({:http_basic_authentication => AUTH})
-        Medusa.crawl(pages.first.url, opts).should have(4).pages
+        crawled_pages = Medusa.crawl(pages.first.url, opts).pages
+        (0..3).to_a.each { |i| crawled_pages.key?(SPEC_DOMAIN + i.to_s).should be_true }
       end
 
       it "should accept multiple starting URLs" do
@@ -69,7 +71,8 @@ module Medusa
         pages << FakePage.new('2', :links => ['3'])
         pages << FakePage.new('3')
 
-        Medusa.crawl([pages[0].url, pages[2].url], @opts).should have(4).pages
+        crawled_pages = Medusa.crawl([pages[0].url, pages[2].url], @opts).pages
+        (0..3).to_a.each { |i| crawled_pages.key?(SPEC_DOMAIN + i.to_s).should be_true }
       end
 
       it "should include the query string when following links" do
@@ -80,8 +83,9 @@ module Medusa
 
         core = Medusa.crawl(pages[0].url, @opts)
 
-        core.should have(2).pages
-        core.pages.keys.should_not include(pages[2].url)
+        core.pages.key?(SPEC_DOMAIN + '0').should be_true
+        core.pages.key?(SPEC_DOMAIN + '1?foo=1').should be_true
+        core.pages.key?(SPEC_DOMAIN + '1').should be_false
       end
 
       it "should be able to skip links with query strings" do
@@ -94,7 +98,9 @@ module Medusa
           a.skip_query_strings = true
         end
 
-        core.should have(2).pages
+        core.pages.key?(SPEC_DOMAIN + '0').should be_true
+        core.pages.key?(SPEC_DOMAIN + '1?foo=1').should be_false
+        core.pages.key?(SPEC_DOMAIN + '2').should be_true
       end
 
       it "should be able to skip links based on a RegEx" do
@@ -108,9 +114,10 @@ module Medusa
           a.skip_links_like /1/, /3/
         end
 
-        core.should have(2).pages
-        core.pages.keys.should_not include(pages[1].url)
-        core.pages.keys.should_not include(pages[3].url)
+        core.pages.key?(SPEC_DOMAIN + '0').should be_true
+        core.pages.key?(SPEC_DOMAIN + '1').should be_false
+        core.pages.key?(SPEC_DOMAIN + '2').should be_true
+        core.pages.key?(SPEC_DOMAIN + '3').should be_false
       end
 
       it "should be able to call a block on every page" do
@@ -127,13 +134,12 @@ module Medusa
         count.should == 3
       end
 
-      it "should not discard page bodies by default" do
-        Medusa.crawl(FakePage.new('0').url, @opts).pages.values#.first.doc.should_not be_nil
-      end
-
       it "should optionally discard page bodies to conserve memory" do
-       # core = Medusa.crawl(FakePage.new('0').url, @opts.merge({:discard_page_bodies => true}))
-       # core.pages.values.first.doc.should be_nil
+       core = Medusa.crawl(FakePage.new('0').url, @opts.merge({:discard_page_bodies => true}))
+       core.pages[SPEC_DOMAIN + '0'].doc.should be_nil
+
+       core = Medusa.crawl(FakePage.new('0').url, @opts.merge({:discard_page_bodies => false}))
+       core.pages[SPEC_DOMAIN + '0'].doc.should_not be_nil
       end
 
       it "should provide a focus_crawl method to select the links on each page to follow" do
@@ -146,22 +152,9 @@ module Medusa
           a.focus_crawl {|p| p.links.reject{|l| l.to_s =~ /1/}}
         end
 
-        core.should have(2).pages
-        core.pages.keys.should_not include(pages[1].url)
-      end
-
-      it "should optionally delay between page requests" do
-        delay = 0.25
-
-        pages = []
-        pages << FakePage.new('0', :links => '1')
-        pages << FakePage.new('1')
-
-        start = Time.now
-        Medusa.crawl(pages[0].url, @opts.merge({:delay => delay}))
-        finish = Time.now
-
-        (finish - start).should satisfy {|t| t > delay * 2}
+        core.pages.key?(SPEC_DOMAIN + '0').should be_true
+        core.pages.key?(SPEC_DOMAIN + '1').should be_false
+        core.pages.key?(SPEC_DOMAIN + '2').should be_true
       end
 
       it "should optionally obey the robots exclusion protocol" do
@@ -173,10 +166,9 @@ module Medusa
                               :content_type => 'text/plain')
 
         core = Medusa.crawl(pages[0].url, @opts.merge({:obey_robots_txt => true}))
-        urls = core.pages.keys
 
-        urls.should include(pages[0].url)
-        urls.should_not include(pages[1].url)
+        core.pages.key?(SPEC_DOMAIN + '0').should be_true
+        core.pages.key?(SPEC_DOMAIN + '1').should be_false
       end
 
       it "should be able to set cookies to send with HTTP requests" do
@@ -228,7 +220,11 @@ module Medusa
 
         it "should optionally limit the depth of the crawl" do
           core = Medusa.crawl(@pages[0].url, @opts.merge({:depth_limit => 3}))
-          core.should have(4).pages
+          core.pages.key?(SPEC_DOMAIN + '0').should be_true
+          core.pages.key?(SPEC_DOMAIN + '1').should be_true
+          core.pages.key?(SPEC_DOMAIN + '2').should be_true
+          core.pages.key?(SPEC_DOMAIN + '3').should be_true
+          core.pages.key?(SPEC_DOMAIN + '4').should be_false
         end
       end
 
@@ -239,65 +235,6 @@ module Medusa
 
       before(:all) do
         @opts = {}
-      end
-    end
-
-    describe Storage::PStore do
-      it_should_behave_like "crawl"
-
-      before(:all) do
-        @test_file = 'test.pstore'
-      end
-
-      before(:each) do
-        File.delete(@test_file) if File.exists?(@test_file)
-        @opts = {:storage => Storage.PStore(@test_file)}
-      end
-
-      after(:each) do
-        File.delete(@test_file) if File.exists?(@test_file)
-      end
-    end
-
-    describe Storage::TokyoCabinet do
-      it_should_behave_like "crawl"
-
-      before(:all) do
-        @test_file = 'test.tch'
-      end
-
-      before(:each) do
-        File.delete(@test_file) if File.exists?(@test_file)
-        @opts = {:storage => @store = Storage.TokyoCabinet(@test_file)}
-      end
-
-      after(:each) do
-        @store.close
-      end
-
-      after(:each) do
-        File.delete(@test_file) if File.exists?(@test_file)
-      end
-    end
-
-    describe Storage::SQLite3 do
-      it_should_behave_like "crawl"
-
-      before(:all) do
-        @test_file = 'test.db'
-      end
-
-      before(:each) do
-        File.delete(@test_file) if File.exists?(@test_file)
-        @opts = {:storage => @store = Storage.SQLite3(@test_file)}
-      end
-
-      after(:each) do
-        @store.close
-      end
-
-      after(:each) do
-        File.delete(@test_file) if File.exists?(@test_file)
       end
     end
 

@@ -4,8 +4,7 @@ require 'medusa/tentacle'
 require 'medusa/page'
 require 'medusa/exceptions'
 require 'medusa/page_store'
-require 'medusa/storage'
-require 'medusa/storage/base'
+require 'moneta'
 
 module Medusa
 
@@ -42,7 +41,7 @@ module Medusa
       :depth_limit => false,
       # number of times HTTP redirects will be followed
       :redirect_limit => 5,
-      # storage engine defaults to Hash in +process_options+ if none specified
+      # Moneta adapter & options as an array, defaults to :LRUHash in +process_options+
       :storage => nil,
       # Hash of cookie name => value to send with HTTP requests
       :cookies => nil,
@@ -197,7 +196,12 @@ module Medusa
     def process_options
       @opts = DEFAULT_OPTS.merge @opts
       @opts[:threads] = 1 if @opts[:delay] > 0
-      storage = Medusa::Storage::Base.new(@opts[:storage] || Medusa::Storage.Hash)
+      storage =  @opts[:storage] || store = Moneta.build do
+        use :Lock
+        use :Transformer, value: :marshal
+        adapter :LRUHash, max_size: 1024000000, max_count: 10240
+      end
+
       @pages = PageStore.new(storage)
       @robots = Robotex.new(@opts[:user_agent]) if @opts[:obey_robots_txt]
 

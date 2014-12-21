@@ -1,6 +1,5 @@
 $:.unshift(File.dirname(__FILE__))
 require 'spec_helper'
-%w[pstore tokyo_cabinet sqlite3 mongodb redis].each { |file| require "medusa/storage/#{file}.rb" }
 
 module Medusa
   describe PageStore do
@@ -21,7 +20,7 @@ module Medusa
         # crawl, then set depths to nil
         page_store = Medusa.crawl(pages.first.url, @opts) do |a|
           a.after_crawl do |ps|
-            ps.each { |url, page| page.depth = nil; ps[url] = page }
+            (0..4).to_a.each { |i| ps[SPEC_DOMAIN + i.to_s].depth = nil }
           end
         end.pages
 
@@ -34,55 +33,6 @@ module Medusa
         page_store[pages[3].url].depth.should == 1
         page_store[pages[4].url].depth.should == 2
       end
-
-      it "should be able to remove all redirects in-place" do
-        pages = []
-        pages << FakePage.new('0', :links => ['1'])
-        pages << FakePage.new('1', :redirect => '2')
-        pages << FakePage.new('2')
-
-        page_store = Medusa.crawl(pages[0].url, @opts).pages
-
-        page_store.should respond_to(:uniq!)
-
-        page_store.uniq!
-        page_store.has_key?(pages[1].url).should == false
-        page_store.has_key?(pages[0].url).should == true
-        page_store.has_key?(pages[2].url).should == true
-      end
-
-      it "should be able to find pages linking to a url" do
-        pages = []
-        pages << FakePage.new('0', :links => ['1'])
-        pages << FakePage.new('1', :redirect => '2')
-        pages << FakePage.new('2')
-
-        page_store = Medusa.crawl(pages[0].url, @opts).pages
-
-        page_store.should respond_to(:pages_linking_to)
-
-        page_store.pages_linking_to(pages[2].url).size.should == 0
-        links_to_1 = page_store.pages_linking_to(pages[1].url)
-        links_to_1.size.should == 1
-        links_to_1.first.should be_an_instance_of(Page)
-        links_to_1.first.url.to_s.should == pages[0].url
-      end
-
-      it "should be able to find urls linking to a url" do
-        pages = []
-        pages << FakePage.new('0', :links => ['1'])
-        pages << FakePage.new('1', :redirect => '2')
-        pages << FakePage.new('2')
-
-        page_store = Medusa.crawl(pages[0].url, @opts).pages
-
-        page_store.should respond_to(:pages_linking_to)
-
-        page_store.urls_linking_to(pages[2].url).size.should == 0
-        links_to_1 = page_store.urls_linking_to(pages[1].url)
-        links_to_1.size.should == 1
-        links_to_1.first.to_s.should == pages[0].url
-      end
     end
 
     describe Hash do
@@ -92,80 +42,5 @@ module Medusa
         @opts = {}
       end
     end
-
-    describe Storage::PStore do
-      it_should_behave_like "page storage"
-
-      before(:each) do
-        @test_file = 'test.pstore'
-        File.delete(@test_file) if File.exists?(@test_file)
-        @opts = {:storage => Storage.PStore(@test_file)}
-      end
-
-      after(:each) do
-        File.delete(@test_file) if File.exists?(@test_file)
-      end
-    end
-
-    describe Storage::TokyoCabinet do
-      it_should_behave_like "page storage"
-
-      before(:each) do
-        @test_file = 'test.tch'
-        File.delete(@test_file) if File.exists?(@test_file)
-        @opts = {:storage => @store = Storage.TokyoCabinet(@test_file)}
-      end
-
-      after(:each) do
-        @store.close
-      end
-
-      after(:each) do
-        File.delete(@test_file) if File.exists?(@test_file)
-      end
-    end
-
-    describe Storage::SQLite3 do
-      it_should_behave_like "page storage"
-
-      before(:each) do
-        @test_file = 'test.db'
-        File.delete(@test_file) if File.exists?(@test_file)
-        @opts = {:storage => @store = Storage.SQLite3(@test_file)}
-      end
-
-      after(:each) do
-        @store.close
-      end
-
-      after(:each) do
-        File.delete(@test_file) if File.exists?(@test_file)
-      end
-    end
-
-    describe Storage::MongoDB do
-      it_should_behave_like "page storage"
-
-      before(:each) do
-        @opts = {:storage => @store = Storage.MongoDB}
-      end
-
-      after(:each) do
-        @store.close
-      end
-    end
-
-    describe Storage::Redis do
-      it_should_behave_like "page storage"
-
-      before(:each) do
-        @opts = {:storage => @store = Storage.Redis}
-      end
-
-      after(:each) do
-        @store.close
-      end
-    end
-
   end
 end
