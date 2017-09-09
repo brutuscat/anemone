@@ -2,6 +2,7 @@ require 'medusa/page'
 require 'medusa/cookie_store'
 
 module Medusa
+
   class HTTP
     # Maximum number of redirects to follow on each get_response
     REDIRECT_LIMIT = 5
@@ -19,7 +20,7 @@ module Medusa
     # Fetch a single Page from the response of an HTTP request to *url*.
     # Just gets the final destination page.
     #
-    def fetch_page(url, referer = nil, depth = nil)
+    def fetch_page(url, referer = nil, depth = 0)
       fetch_pages(url, referer, depth).last
     end
 
@@ -27,22 +28,18 @@ module Medusa
     # Create new Pages from the response of an HTTP request to *url*,
     # including redirects
     #
-    def fetch_pages(url, referer = nil, depth = nil)
+    def fetch_pages(url, referer = nil, depth = 0)
       begin
         url = URI(url) unless url.is_a?(URI)
         pages = []
-        get(url, referer) do |response, headers, code, location, redirect_to, response_time|
-          pages << Page.new(location, :body => response,
-                                      :headers => headers,
-                                      :code => code,
-                                      :referer => referer,
-                                      :depth => depth,
-                                      :redirect_to => redirect_to,
-                                      :response_time => response_time)
+        debug_request.call("Fetching pages #{url}") if debug_request
+        g_rtn = get(url, referer) do |page|
+          page.depth = depth
+          pages << page
         end
-
         return pages
       rescue Exception => e
+        debug_request.call("ERR #{e}") if debug_request
         if verbose?
           puts e.inspect
           puts e.backtrace
@@ -50,6 +47,8 @@ module Medusa
         pages ||= []
         return pages << Page.new(url, :error => e)
       end
+    ensure
+      debug_request.call("Finished fetch pages:#{url} #{pages.size}") if debug_request
     end
 
     #
@@ -117,7 +116,20 @@ module Medusa
       @opts[:read_timeout]
     end
 
-    private
+    #
+    # HTTP headers to add to the request
+    #
+    def http_request_headers
+      @opts[:http_request_headers] || {}
+    end
+
+    #
+    # HTTP headers to add to the request
+    #
+    def debug_request
+      @opts[:debug_request]
+    end
+
 
     #
     # Retrieve HTTP responses for *url*, including redirects.
@@ -125,18 +137,33 @@ module Medusa
     # for each response.
     #
     def get(url, referer = nil)
+      debug_request.call("get #{url}") if debug_request
       limit = redirect_limit
       loc = url
+      pages = []
       begin
-          # if redirected to a relative url, merge it with the host of the original
-          # request url
-          loc = url.merge(loc) if loc.relative?
+        # if redirected to a relative url, merge it with the host of the original
+        # request url
+        loc = url.merge(loc) if loc.relative?
 
-          response, headers, response_time, response_code, redirect_to = get_response(loc, referer)
-
-          yield response, headers, Integer(response_code), loc, redirect_to, response_time
-          limit -= 1
+        response, headers, response_time, response_code, redirect_to = get_response(loc, referer)
+        p = Page.new(loc,
+                     :body => response,
+                     :headers => headers,
+                     :code => Integer(response_code),
+                     :referer => referer,
+                     :redirect_to => redirect_to,
+                     :response_time => response_time)
+        debug_request.call("get results: #{response_code} #{p}" ) if debug_request rescue
+        pages.push p
+        yield p
+        limit -= 1
       end while (loc = redirect_to) && allowed?(redirect_to, url) && limit > 0
+      #return pages
+    rescue Exception => e
+      debug_request.call("ERR: #{e}") if debug_request
+    ensure
+      # debug_request.call("get fin #{pages.size}") if debug_request
     end
 
     #
@@ -144,43 +171,49 @@ module Medusa
     #
     def get_response(url, referer = nil)
       full_path = url.query.nil? ? url.path : "#{url.path}?#{url.query}"
-
+      # debug_request.call("Getting-response #{full_path}, #{http_request_headers}") if debug_request
       opts = {}
       opts['User-Agent'] = user_agent if user_agent
       opts['Referer'] = referer.to_s if referer
       opts['Cookie'] = @cookie_store.to_s unless @cookie_store.empty? || (!accept_cookies? && @opts[:cookies].nil?)
       opts[:http_basic_authentication] = http_basic_authentication if http_basic_authentication
       opts[:proxy] = proxy if proxy
-      opts[:proxy_http_basic_authentication] = proxy_http_basic_authentication if proxy_http_basic_authentication
+      opts[:proxy_http_basic_authentication] = proxy_http_basic_authentication if proxy_http_basic_authentication rescue
       opts[:read_timeout] = read_timeout if !!read_timeout
       opts[:redirect] = false
       redirect_to = nil
+      http_request_headers.each { |header, value| opts[header] = value }
+      debug_request.call("#{url}, #{opts}") if debug_request
       retries = 0
       begin
         start = Time.now()
-
         begin
           resource = open(url, opts)
         rescue OpenURI::HTTPRedirect => e_redirect
+          debug_request.call("RED: #{e_redirect}") if debug_request
           resource = e_redirect.io
           redirect_to = e_redirect.uri
         rescue OpenURI::HTTPError => e_http
+          debug_request.call("ERR: #{e_http}") if debug_request
           resource = e_http.io
         end
-
         finish = Time.now()
         response_time = ((finish - start) * 1000).round
         @cookie_store.merge!(resource.meta['set-cookie']) if accept_cookies?
+        debug_request.call("Returning response after #{response_time}ms") if debug_request
         return resource.read, resource.meta, response_time, resource.status.shift, redirect_to
 
       rescue Timeout::Error, EOFError, Errno::ECONNREFUSED, Errno::ETIMEDOUT, Errno::ECONNRESET => e
         retries += 1
-        puts "[medusa] Retrying ##{retries} on url #{url} because of: #{e.inspect}" if verbose?
+        debug_request.call("[medusa] Retrying ##{retries} on url #{url} because of: #{e.inspect}") if debug_request
         sleep(3 ^ retries)
         retry unless retries > RETRY_LIMIT
       ensure
+        # debug_request.call("Closing response #{resource}") if debug_request
         resource.close if !resource.nil? && !resource.closed?
       end
+    ensure
+      # debug_request.call("Fin get_request") if debug_request
     end
 
     def verbose?

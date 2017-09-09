@@ -6,11 +6,10 @@ module Medusa
     #
     # Create a new Tentacle
     #
-    def initialize(link_queue, page_queue, opts = {})
+    def initialize(core, link_queue, page_queue)
+      @core = core
       @link_queue = link_queue
       @page_queue = page_queue
-      @http = Medusa::HTTP.new(opts)
-      @opts = opts
     end
 
     #
@@ -23,7 +22,12 @@ module Medusa
 
         break if link == :END
 
-        @http.fetch_pages(link, referer, depth).each { |page| @page_queue << page }
+        pages = @core.http.fetch_pages(link, referer, depth)
+
+        pages.each { |page|
+          @core.debug_request.call("Inserting page #{page.url.path}")
+          @page_queue.push page
+        }
 
         delay
       end
@@ -32,7 +36,7 @@ module Medusa
     private
 
     def delay
-      sleep @opts[:delay] if @opts[:delay] > 0
+      sleep @core.opts[:delay] if @core.opts[:delay] > 0
     end
 
   end

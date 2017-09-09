@@ -1,5 +1,6 @@
 require 'thread'
 require 'robotex'
+require 'medusa/http'
 require 'medusa/tentacle'
 require 'medusa/page'
 require 'medusa/exceptions'
@@ -55,9 +56,12 @@ module Medusa
       # proxy server port number
       :proxy_port => false,
       # HTTP read timeout in seconds
-      :read_timeout => nil
+      :read_timeout => nil,
+      # HTTP headers to add
+      :http_request_headers => {},
+      # HTTP debug request headers by calling this function with them
+      :debug_request => nil,
     }
-
     # Create setter methods for all options to be called from the crawl block
     DEFAULT_OPTS.keys.each do |key|
       define_method "#{key}=" do |value|
@@ -79,9 +83,29 @@ module Medusa
       @skip_link_patterns = []
       @after_crawl_blocks = []
       @opts = opts
-
+      @http = Medusa::HTTP.new(opts)
+      if opts[:verbose] and !debug_request
+        debug_request = Proc.new{ |*args| puts "#{args}" }
+      end
       yield self if block_given?
     end
+
+    def http
+      @http
+    end
+
+    def debug_request
+      @opts[:debug_request]
+    end
+
+    def debug_request=(value)
+      @opts[:debug_request] = value
+    end
+
+    def opts
+      @opts
+    end
+
 
     #
     # Convenience method to start a new crawl
@@ -153,23 +177,24 @@ module Medusa
 
       link_queue = Queue.new
       page_queue = Queue.new
+      @urls.each{ |url| link_queue.enq(url) }
 
       @opts[:threads].times do
-        @tentacles << Thread.new { Tentacle.new(link_queue, page_queue, @opts).run }
+        @tentacles << Thread.new { Tentacle.new(self, link_queue, page_queue).run }
       end
 
-      @urls.each{ |url| link_queue.enq(url) }
+
 
       loop do
         page = page_queue.deq
         @pages.touch_key page.url
-        puts "#{page.url} Queue: #{link_queue.size}" if @opts[:verbose]
+        # debug_request.call("#{page.url} Queue: #{link_queue.size}") if debug_request
         do_page_blocks page
         page.discard_doc! if @opts[:discard_page_bodies]
 
         links = links_to_follow page
         links.each do |link|
-          link_queue << [link, page.url.dup, page.depth + 1]
+          link_queue << [link, page.url.dup, (page.depth or 0) + 1]
         end
         @pages.touch_keys links
 
@@ -186,6 +211,7 @@ module Medusa
           end
         end
       end
+
 
       @tentacles.each { |thread| thread.join }
       do_after_crawl_blocks
@@ -241,7 +267,8 @@ module Medusa
     #
     def links_to_follow(page)
       links = @focus_crawl_block ? @focus_crawl_block.call(page) : page.links
-      links.select { |link| visit_link?(link, page) }.map { |link| link.dup }
+      links = links.select { |link| visit_link?(link, page) }.map { |link| link.dup }
+      links
     end
 
     #
