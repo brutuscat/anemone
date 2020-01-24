@@ -1,4 +1,6 @@
 # Medusa
+[![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Fbrutuscat%2Fmedusa.svg?type=shield)](https://app.fossa.io/projects/git%2Bgithub.com%2Fbrutuscat%2Fmedusa?ref=badge_shield)
+
 
 Medusa is a web spider framework that can spider a domain and collect useful
 information about the pages it visits. It is versatile, allowing you to
@@ -47,3 +49,7 @@ To test and develop this gem, additional requirements are:
  - redis
 
 You will need to have [Redis](http://redis.io/) installed on your system and running.
+
+
+## License
+[![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Fbrutuscat%2Fmedusa.svg?type=large)](https://app.fossa.io/projects/git%2Bgithub.com%2Fbrutuscat%2Fmedusa?ref=badge_large)
